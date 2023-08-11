@@ -172,7 +172,7 @@ def stop_transcription():
 
 @eel.expose
 def audio_transcription(user_settings, base64data):
-    global transcriber, openai_api
+    global transcriber, openai_api, coursedict
     try:
         (
             filtered_app_settings,
@@ -186,14 +186,10 @@ def audio_transcription(user_settings, base64data):
         if app_settings.use_openai_api:
             openai_api = OpenAIAPI()
 
-        transcriber = AudioTranscriber(
-            event_loop,
-            whisper_model,
-            filtered_transcribe_settings,
-            app_settings,
-            None,
-            openai_api,
-        )
+        transcriber = AudioTranscriber(event_loop, whisper_model,
+                                       filtered_transcribe_settings,
+                                       app_settings, None, openai_api,
+                                       coursedict)
 
         audio_data = base64_to_audio(base64data)
         if len(audio_data) > 0:
