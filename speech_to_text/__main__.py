@@ -3,6 +3,9 @@ import eel
 import sys
 import threading
 
+from notion_client import Client
+import traceback
+
 from faster_whisper import WhisperModel
 from .audio_transcriber import AppOptions
 from .audio_transcriber import AudioTranscriber
@@ -19,17 +22,61 @@ thread: threading.Thread = None
 websocket_server: WebSocketServer = None
 openai_api: OpenAIAPI = None
 
+coursedict: dict = {}
+
+
+def myquery(notion, database_id, start_cursor=''):
+    if start_cursor == '':
+        results = notion.databases.query(**{
+            "database_id": database_id,
+        }).get("results")
+    else:
+        results = notion.databases.query(**{
+            "database_id": database_id,
+            "start_cursor": start_cursor,
+        }).get("results")
+    if len(results) == 100:
+        results = results[:-1] + myquery(database_id, results[-1]['id'])
+    return results
+
+
+@eel.expose
+def get_valid_courses(settings):
+    global coursedict
+    courses = []
+    try:
+        # eel.on_recive_message(str(settings))
+        notion = Client(auth=settings['notion_apikey'])
+        results = myquery(notion, settings['courselist_databaseid'])
+        for i, temp_course in enumerate(results):
+            tempdic = {
+                "index": i,
+                "name":
+                temp_course['properties']['Name']['title'][0]['plain_text']
+            }
+            courses.append(tempdic)
+            pageresult = notion.blocks.retrieve(temp_course['id'] +
+                                                '/children')
+            for j in range(len(pageresult['results'])):
+                if pageresult['results'][j]['type'] == 'child_database':
+                    coursedict[temp_course['properties']['Name']['title'][0]
+                               ['plain_text']] = pageresult['results'][j]['id']
+    except Exception:
+        print(traceback.format_exc())
+        pass
+
+    return courses
+
 
 @eel.expose
 def get_valid_devices():
     devices = get_valid_input_devices()
-    return [
-        {
-            "index": d["index"],
-            "name": f"{d['name']} {d['host_api_name']} ({d['max_input_channels']} in)",
-        }
-        for d in devices
-    ]
+    return [{
+        "index":
+        d["index"],
+        "name":
+        f"{d['name']} {d['host_api_name']} ({d['max_input_channels']} in)",
+    } for d in devices]
 
 
 @eel.expose
@@ -61,7 +108,7 @@ def get_user_settings():
 
 @eel.expose
 def start_transcription(user_settings):
-    global transcriber, event_loop, thread, websocket_server, openai_api
+    global transcriber, event_loop, thread, websocket_server, openai_api, coursedict
     try:
         (
             filtered_app_settings,
@@ -75,26 +122,22 @@ def start_transcription(user_settings):
 
         if app_settings.use_websocket_server:
             websocket_server = WebSocketServer(event_loop)
-            asyncio.run_coroutine_threadsafe(
-                websocket_server.start_server(), event_loop
-            )
+            asyncio.run_coroutine_threadsafe(websocket_server.start_server(),
+                                             event_loop)
 
         if app_settings.use_openai_api:
             openai_api = OpenAIAPI()
 
-        transcriber = AudioTranscriber(
-            event_loop,
-            whisper_model,
-            filtered_transcribe_settings,
-            app_settings,
-            websocket_server,
-            openai_api,
-        )
+        transcriber = AudioTranscriber(event_loop, whisper_model,
+                                       filtered_transcribe_settings,
+                                       app_settings, websocket_server,
+                                       openai_api, coursedict)
         asyncio.set_event_loop(event_loop)
         thread = threading.Thread(target=event_loop.run_forever, daemon=True)
         thread.start()
 
-        asyncio.run_coroutine_threadsafe(transcriber.start_transcription(), event_loop)
+        asyncio.run_coroutine_threadsafe(transcriber.start_transcription(),
+                                         event_loop)
     except Exception as e:
         eel.on_recive_message(str(e))
 
@@ -106,14 +149,12 @@ def stop_transcription():
         eel.transcription_stoppd()
         return
     transcriber_future = asyncio.run_coroutine_threadsafe(
-        transcriber.stop_transcription(), event_loop
-    )
+        transcriber.stop_transcription(), event_loop)
     transcriber_future.result()
 
     if websocket_server is not None:
         websocket_server_future = asyncio.run_coroutine_threadsafe(
-            websocket_server.stop_server(), event_loop
-        )
+            websocket_server.stop_server(), event_loop)
         websocket_server_future.result()
 
     if thread.is_alive():
@@ -181,13 +222,12 @@ def get_filtered_transcribe_settings(settings):
 
 
 def extracting_each_setting(user_settings):
-    filtered_app_settings = get_filtered_app_settings(user_settings["app_settings"])
+    filtered_app_settings = get_filtered_app_settings(
+        user_settings["app_settings"])
     filtered_model_settings = get_filtered_model_settings(
-        user_settings["model_settings"]
-    )
+        user_settings["model_settings"])
     filtered_transcribe_settings = get_filtered_transcribe_settings(
-        user_settings["transcribe_settings"]
-    )
+        user_settings["transcribe_settings"])
 
     write_json(
         "settings",

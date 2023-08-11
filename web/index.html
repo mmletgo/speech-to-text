@@ -131,6 +131,32 @@
               OpenAI API in Text Proofreading:</label>
             <input type="checkbox" id="use_openai_api" class="setting-control" />
           </div>
+          <div class="setting-item">
+            <label for="notion_apikey" class="setting-label" title="integrations of notion">
+              Notion_apikey:
+            </label>
+            <input type="text" id="notion_apikey" class="setting-control optional" />
+          </div>
+          <div class="setting-item">
+            <label for="courselist_databaseid" class="setting-label" title="integrations of notion">
+              Courselist_databaseid:
+            </label>
+            <input type="text" id="courselist_databaseid" class="setting-control optional" />
+          </div>
+          <div class="setting-item">
+            <label for="course" class="setting-label" title="Please select the target course.">
+              Course:</label>
+            <select id="course" class="setting-control optional"></select>
+            <button id="course-refresh" class="refresh-button">
+              Refresh
+            </button>
+          </div>
+          <div class="setting-item">
+            <label for="note_name" class="setting-label" title="note_name of notion">
+              Note_name:
+            </label>
+            <input type="text" id="note_name" class="setting-control optional" />
+          </div>
         </div>
       </div>
 

@@ -22,7 +22,20 @@ function on_recive_segments(segments) {
 
   const appSettings = getAppSettings();
   if (appSettings["create_audio_file"]) {
-    audio.src = "voice.wav" + "?v=" + new Date().getTime();
+    if ("note_name" in appSettings) {
+      if ("course" in appSettings) {
+        if (appSettings['course'] != '') {
+          // console.log(settings)
+          audio.src = 'record/' + appSettings['course'] + '/' + appSettings['note_name'] + ".wav" + "?v=" + new Date().getTime();
+        } else {
+          audio.src = 'record/' + appSettings['note_name'] + ".wav" + "?v=" + new Date().getTime();
+        }
+      } else {
+        audio.src = 'record/' + appSettings['note_name'] + ".wav" + "?v=" + new Date().getTime();
+      }
+    } else {
+      audio.src = "record/note.wav" + "?v=" + new Date().getTime();
+    };
     audio.hidden = false;
     audio.load();
   }
@@ -115,6 +128,20 @@ async function updateDevices() {
   }
 }
 
+async function updateCourses() {
+  const settings = getContentSettings("#app-settings-window");
+  let courses = await eel.get_valid_courses(settings)();
+  let select = document.querySelector("#course");
+
+  select.innerHTML = "";
+  for (let i = 0; i < courses.length; i++) {
+    let opt = document.createElement("option");
+    opt.value = courses[i].index;
+    opt.innerHTML = courses[i].name;
+    select.appendChild(opt);
+  }
+}
+
 function getContentSettings(elementid) {
   let elements = Array.from(
     document.querySelector(elementid).querySelectorAll(".setting-control")
@@ -123,7 +150,10 @@ function getContentSettings(elementid) {
   const json = elements.reduce((obj, element) => {
     let value;
     if (element.tagName === "SELECT") {
-      value = element.options[element.selectedIndex].value;
+      try {
+        value = element.options[element.selectedIndex].value;
+      } catch (error) {
+      }
     } else if (element.tagName === "INPUT" && element.type === "checkbox") {
       value = element.checked;
     } else if (element.tagName === "INPUT" && element.type === "number") {
@@ -147,7 +177,13 @@ function getAppSettings() {
   const settings = getContentSettings("#app-settings-window");
   settings["audio_device"] =
     document.querySelector("#audio_device").selectedIndex;
-
+  try {
+    var myselect = document.getElementById("course");
+    var index = myselect.selectedIndex;
+    settings["course"] = myselect.options[index].text;
+  } catch (e) {
+    settings["course"] = ''
+  }
   return settings;
 }
 
@@ -451,6 +487,12 @@ function addButtonClickEventListener() {
     .querySelector("#console-message-clear")
     .addEventListener("click", () => {
       clearMessage("console-message");
+    });
+  document
+    .querySelector("#course-refresh")
+    .addEventListener("click", () => {
+      // console.log('click fresh')
+      updateCourses();
     });
 }
 
