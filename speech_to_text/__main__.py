@@ -116,8 +116,11 @@ def start_transcription(user_settings):
             filtered_transcribe_settings,
         ) = extracting_each_setting(user_settings)
 
-        whisper_model = WhisperModel(**filtered_model_settings)
         app_settings = AppOptions(**filtered_app_settings)
+        if app_settings.myserver != '':
+            whisper_model = None
+        else:
+            whisper_model = WhisperModel(**filtered_model_settings)
         event_loop = asyncio.new_event_loop()
 
         if app_settings.use_websocket_server:

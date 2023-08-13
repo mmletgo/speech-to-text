@@ -5,13 +5,16 @@ import queue
 import numpy as np
 
 import traceback
+import requests
 import os
 import copy
 from datetime import timedelta
 from notion_client import Client
+from scipy.io import wavfile
+import io
 
 from typing import NamedTuple
-from faster_whisper import WhisperModel
+# from faster_whisper import WhisperModel
 from concurrent.futures import ThreadPoolExecutor
 
 from .utils.audio_utils import create_audio_stream
@@ -35,6 +38,7 @@ class AppOptions(NamedTuple):
     courselist_databaseid: str = ''
     course: str = ''
     note_name: str = 'note'
+    myserver: str = ''
 
 
 class AudioTranscriber:
@@ -42,7 +46,7 @@ class AudioTranscriber:
     def __init__(
         self,
         event_loop: asyncio.AbstractEventLoop,
-        whisper_model: WhisperModel,
+        whisper_model,
         transcribe_settings: dict,
         app_options: AppOptions,
         websocket_server: WebSocketServer,
@@ -50,7 +54,7 @@ class AudioTranscriber:
         coursedict: dict,
     ):
         self.event_loop = event_loop
-        self.whisper_model: WhisperModel = whisper_model
+        self.whisper_model = whisper_model
         self.transcribe_settings = transcribe_settings
         self.app_options = app_options
         self.websocket_server = websocket_server
@@ -69,6 +73,25 @@ class AudioTranscriber:
             self.notion = Client(auth=self.app_options.notion_apikey)
             self.coursedict = coursedict
 
+    def mytranscribe(self, audio_data):
+        # with open("test_audio0.wav", "wb") as audio_file:
+        #     audio_file.write(audio)
+        wav_buffer = io.BytesIO()
+        wavfile.write(wav_buffer, 16000, audio_data)
+        # audio_bytes = bytes(audio_data)
+        wav_buffer.seek(0)
+        files = {"file": ("audio.wav", wav_buffer, "audio/wav")}
+        response = requests.post('http://' + self.app_options.myserver +
+                                 '/asr',
+                                 files=files)
+
+        if response.status_code == 200:
+            result = response.json()
+            segment_list = result["transcription"]
+            return segment_list, None
+        else:
+            print("Error:", response.text)
+
     async def transcribe_audio(self):
         # Ignore parameters that affect performance
         transcribe_settings = self.transcribe_settings.copy()
@@ -82,29 +105,43 @@ class AudioTranscriber:
                     audio_data = await self.event_loop.run_in_executor(
                         executor,
                         functools.partial(self.audio_queue.get, timeout=3.0))
+                    if self.app_options.myserver != '':
+                        # Create a partial function for the model's transcribe method
+                        func = functools.partial(self.mytranscribe,
+                                                 audio_data=audio_data)
 
-                    # Create a partial function for the model's transcribe method
-                    func = functools.partial(
-                        self.whisper_model.transcribe,
-                        audio=audio_data,
-                        **transcribe_settings,
-                    )
+                        # Run the transcribe method in a thread
+                        segments, _ = await self.event_loop.run_in_executor(
+                            executor, func)
 
-                    # Run the transcribe method in a thread
-                    segments, _ = await self.event_loop.run_in_executor(
-                        executor, func)
+                        for segment in segments:
+                            eel.display_transcription(segment['text'])
+                            if self.websocket_server is not None:
+                                await self.websocket_server.send_message(
+                                    segment['text'])
+                    else:
+                        # Create a partial function for the model's transcribe method
+                        func = functools.partial(
+                            self.whisper_model.transcribe,
+                            audio=audio_data,
+                            **transcribe_settings,
+                        )
 
-                    for segment in segments:
-                        eel.display_transcription(segment.text)
-                        if self.websocket_server is not None:
-                            await self.websocket_server.send_message(
-                                segment.text)
+                        # Run the transcribe method in a thread
+                        segments, _ = await self.event_loop.run_in_executor(
+                            executor, func)
+
+                        for segment in segments:
+                            eel.display_transcription(segment.text)
+                            if self.websocket_server is not None:
+                                await self.websocket_server.send_message(
+                                    segment.text)
 
                 except queue.Empty:
                     # Skip to the next iteration if a timeout occurs
                     continue
-                except Exception as e:
-                    eel.on_recive_message(str(e))
+                except Exception:
+                    eel.on_recive_message(str(traceback.format_exc()))
 
     def process_audio(self, audio_data: np.ndarray, frames: int, time, status):
         is_speech = self.vad.is_speech(audio_data)
@@ -131,25 +168,28 @@ class AudioTranscriber:
                 self.audio_data_list.clear()
 
     def batch_transcribe_audio(self, audio_data: np.ndarray):
-        segment_list = []
-        segments, _ = self.whisper_model.transcribe(audio=audio_data,
-                                                    **self.transcribe_settings)
+        if self.app_options.myserver != '':
+            segment_list, _ = self.mytranscribe(audio_data)
+        else:
+            segment_list = []
+            segments, _ = self.whisper_model.transcribe(
+                audio=audio_data, **self.transcribe_settings)
 
-        for segment in segments:
-            word_list = []
-            if self.transcribe_settings["word_timestamps"] is True:
-                for word in segment.words:
-                    word_list.append({
-                        "start": word.start,
-                        "end": word.end,
-                        "text": word.word,
-                    })
-            segment_list.append({
-                "start": segment.start,
-                "end": segment.end,
-                "text": segment.text,
-                "words": word_list,
-            })
+            for segment in segments:
+                word_list = []
+                if self.transcribe_settings["word_timestamps"] is True:
+                    for word in segment.words:
+                        word_list.append({
+                            "start": word.start,
+                            "end": word.end,
+                            "text": word.word,
+                        })
+                segment_list.append({
+                    "start": segment.start,
+                    "end": segment.end,
+                    "text": segment.text,
+                    "words": word_list,
+                })
 
         eel.transcription_clear()
 

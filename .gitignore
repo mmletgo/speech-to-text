@@ -129,3 +129,4 @@ dmypy.json
 .pyre/
 *.srt
 *.wav
+speech_to_text/settings/user_settings.json
