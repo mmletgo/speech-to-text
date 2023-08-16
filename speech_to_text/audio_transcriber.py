@@ -201,6 +201,8 @@ class AudioTranscriber:
         try:
             srt_filename = 'web/record/' + self.app_options.note_name + ".srt"
             if self.app_options.course != '':
+                if not os.path.isdir('web/record/' + self.app_options.course):
+                    os.makedirs('web/record/' + self.app_options.course)
                 srt_filename = 'web/record/' + self.app_options.course + '/' + self.app_options.note_name + ".srt"
             self.generate_srt_file(segment_list, srt_filename)
             if self.app_options.notion_apikey != '':

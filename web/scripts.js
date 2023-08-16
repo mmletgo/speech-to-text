@@ -303,7 +303,7 @@ function fileValidation(file) {
     return false;
   }
 
-  const maxSizeInMB = 10;
+  const maxSizeInMB = 4096;
   const maxSizeInBytes = maxSizeInMB * 1024 * 1024;
   if (file.size > maxSizeInBytes) {
     on_recive_message(`File size must be under ${maxSizeInMB}MB`);
